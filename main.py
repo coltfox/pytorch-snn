@@ -30,4 +30,4 @@ train_eval_model = TrainEvalDenseSNN(
 )
 
 train_eval_model.train()
-# train_eval_model.eval()
+train_eval_model.eval()
