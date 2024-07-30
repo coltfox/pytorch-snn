@@ -1,4 +1,3 @@
-from typing import Iterator
 import torch
 import time
 import torchvision
@@ -41,10 +40,10 @@ class TrainEvalDenseSNN:
     def train(self):
         start = time.time()
         for epoch in range(1, self.epochs + 1):
-            sys.stdout.write(f"Epoch {epoch}/{self.epochs}\n")
+            sys.stdout.write(f"\nEpoch {epoch}/{self.epochs}\n")
             self._train_one_epoch()
 
-        print("Finished training %s epochs in %ss" %
+        print("\nFinished training %s epochs in %ss" %
               (self.epochs, round(time.time() - start, 3)))
 
     def eval(self):
@@ -86,9 +85,6 @@ class TrainEvalDenseSNN:
         return test_loss, test_accuracy
 
     def _train_one_epoch(self):
-        all_true_ys, all_pred_ys = [], []
-        all_batches_loss = []
-
         n_samples = len(self.train_loader)
         trn_loss, trn_accuracy = 0.0, 0.0
 
@@ -107,25 +103,19 @@ class TrainEvalDenseSNN:
             # Shape of mean_spk_rate_all_ts is (batch_size, #Classes).
             # ArgMax over classes.
             trn_preds = torch.argmax(mean_spk_rate_over_ts, axis=1)
-            # Shape of trn_preds is (batch_size,).
-            all_true_ys.extend(trn_y.detach().numpy().tolist())
-            all_pred_ys.extend(trn_preds.detach().numpy().tolist())
 
             # Compute Training Loss and Back-propagate.
             loss_value = self.loss_function(mean_spk_rate_over_ts, trn_y)
-            all_batches_loss.append(loss_value.detach().item())
+
             self.optimizer.zero_grad()
             loss_value.backward()
             self.optimizer.step()
 
-            trn_accuracy = np.mean(np.array(all_true_ys)
-                                   == np.array(all_pred_ys))
-            trn_loss = np.mean(all_batches_loss)
+            trn_accuracy = np.mean(np.array(trn_y) == np.array(trn_preds))
+            trn_loss = float(loss_value)
 
             sys.stdout.write('\r')
-            j = (i) / n_samples
+            j = (i + 1) / n_samples
             sys.stdout.write("%s/%s [%-20s] %d%% - Training Loss: %s - Training Accuracy: %s" % (
-                i, n_samples, '=' * int(20 * j), 100 * j, round(trn_loss, 4), round(trn_accuracy, 4)))
+                i + 1, n_samples, '=' * int(20 * j), 100 * j, round(trn_loss, 4), round(trn_accuracy, 4)))
             sys.stdout.flush()
-
-        return trn_accuracy, trn_loss
