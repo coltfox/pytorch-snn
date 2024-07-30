@@ -29,4 +29,5 @@ train_eval_model = TrainEvalDenseSNN(
     device=DEVICE
 )
 
-train_eval_model.train_eval()
+train_eval_model.train()
+# train_eval_model.eval()

@@ -1,11 +1,13 @@
+from typing import Iterator
 import torch
 import time
 import torchvision
 import numpy as np
+import sys
 from dense_snn import DenseSNN
 
 
-class TrainEvalDenseSNN(object):
+class TrainEvalDenseSNN:
     def __init__(self, model: DenseSNN, epochs=10, batch_size: int = 500, device: torch.device | str = 'cpu'):
         """
         Args:
@@ -36,11 +38,63 @@ class TrainEvalDenseSNN(object):
                                        ),
             batch_size=batch_size, shuffle=True)
 
-    def train(self, epoch):
+    def train(self):
+        start = time.time()
+        for epoch in range(1, self.epochs + 1):
+            sys.stdout.write(f"Epoch {epoch}/{self.epochs}\n")
+            self._train_one_epoch()
+
+        print("Finished training %s epochs in %ss" %
+              (self.epochs, round(time.time() - start, 3)))
+
+    def eval(self):
+        sys.stdout.write("Evaluating on test data")
+
+        all_true_ys, all_pred_ys = [], []
+        all_losses = []
+        test_loss, test_accuracy = 0.0, 0.0
+        n_samples = len(self.test_loader)
+
+        self.model.eval()
+
+        with torch.no_grad():
+            for i, (tst_x, tst_y) in enumerate(self.test_loader):
+                # Each batch tst_x and tst_y is of shape (batch_size, 1, 28, 28) and
+                # (batch_size) respectively, where the image pixel values are between
+                # [0, 1], and the image class is a numeral between [0, 9].
+                # Flatten from dim 1 onwards.
+                tst_x = tst_x.flatten(start_dim=1).to(self.device)
+                all_ts_out_spks = self.model(tst_x)
+                mean_spk_rate_over_ts = torch.mean(all_ts_out_spks, axis=1)
+                tst_preds = torch.argmax(mean_spk_rate_over_ts, axis=1)
+                all_true_ys.append(tst_y.detach().numpy().tolist())
+                all_pred_ys.append(tst_preds.detach().numpy().tolist())
+
+                loss_value = self.loss_function(mean_spk_rate_over_ts, tst_y)
+                all_losses.append(loss_value.detach().item())
+
+                test_accuracy = np.mean(
+                    np.array(all_true_ys) == np.array(all_pred_ys))
+                test_loss = np.mean(all_losses)
+
+                sys.stdout.write('\r')
+                j = (i + 1) / n_samples
+                sys.stdout.write("%s/%s [%-20s] %d%% - Test Loss: %s - Test Accuracy: %s" % (
+                    i + 1, n_samples, '=' * int(20 * j), 100 * j, round(test_loss, 4), round(test_accuracy, 4)))
+                sys.stdout.flush()
+
+        return test_loss, test_accuracy
+
+    def _train_one_epoch(self):
         all_true_ys, all_pred_ys = [], []
         all_batches_loss = []
+
+        n_samples = len(self.train_loader)
+        trn_loss, trn_accuracy = 0.0, 0.0
+
         self.model.train()
-        for trn_x, trn_y in self.train_loader:
+
+        for i, (trn_x, trn_y) in enumerate(self.train_loader):
             # Each batch trn_x and trn_y is of shape (batch_size, 1, 28, 28) and
             # (batch_size) respectively, where the image pixel values are between
             # [0, 1], and the image class is a numeral between [0, 9].
@@ -64,42 +118,14 @@ class TrainEvalDenseSNN(object):
             loss_value.backward()
             self.optimizer.step()
 
-        trn_accuracy = np.mean(np.array(all_true_ys) == np.array(all_pred_ys))
-        return trn_accuracy, np.mean(all_batches_loss)
+            trn_accuracy = np.mean(np.array(all_true_ys)
+                                   == np.array(all_pred_ys))
+            trn_loss = np.mean(all_batches_loss)
 
-    def eval(self, epoch):
-        all_true_ys, all_pred_ys = [], []
-        self.model.eval()
-        with torch.no_grad():
-            for tst_x, tst_y in self.test_loader:
-                # Each batch tst_x and tst_y is of shape (batch_size, 1, 28, 28) and
-                # (batch_size) respectively, where the image pixel values are between
-                # [0, 1], and the image class is a numeral between [0, 9].
-                # Flatten from dim 1 onwards.
-                tst_x = tst_x.flatten(start_dim=1).to(self.device)
-                all_ts_out_spks = self.model(tst_x)
-                mean_spk_rate_over_ts = torch.mean(all_ts_out_spks, axis=1)
-                tst_preds = torch.argmax(mean_spk_rate_over_ts, axis=1)
-                all_true_ys.append(tst_y.detach().numpy().tolist())
-                all_pred_ys.append(tst_preds.detach().numpy().tolist())
+            sys.stdout.write('\r')
+            j = (i) / n_samples
+            sys.stdout.write("%s/%s [%-20s] %d%% - Training Loss: %s - Training Accuracy: %s" % (
+                i, n_samples, '=' * int(20 * j), 100 * j, round(trn_loss, 4), round(trn_accuracy, 4)))
+            sys.stdout.flush()
 
-        tst_accuracy = np.mean(np.array(all_true_ys) == np.array(all_pred_ys))
-        return tst_accuracy
-
-    def train_eval(self):
-        start = time.time()
-
-        for epoch in range(1, self.epochs + 1):
-            epoch_start = time.time()
-
-            _, mean_loss = self.train(epoch)
-            tst_accuracy = self.eval(epoch)
-
-            epoch_end = time.time()
-
-            print("Epoch: %s, Training Loss: %s, Test Accuracy: %s, Time Elapsed: %ss"
-                  % (epoch, mean_loss, tst_accuracy, round(epoch_end - epoch_start, 3)))
-
-        end = time.time()
-
-        print("Finished training in %ss" % (round(end - start, 3)))
+        return trn_accuracy, trn_loss
