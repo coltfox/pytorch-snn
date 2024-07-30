@@ -19,7 +19,6 @@ class DenseSpikingLayer(SpikingLayer, torch.nn.Module):
         super().__init__(n_out, batch_size, v_thr, device)
 
         self._c = torch.zeros(batch_size, n_out, device=device)
-        # self._w = torch.nn.Parameter(torch.randn(n_in, n_out))
 
         self._fc = torch.nn.Linear(n_in, n_out, bias=False)
         self._fc.weight.data = torch.empty(
@@ -30,23 +29,13 @@ class DenseSpikingLayer(SpikingLayer, torch.nn.Module):
     def forward(self, x_t: torch.Tensor) -> torch.Tensor:
         self.calculate_current(x_t)
         self.calculate_voltage(self._c)
-        # self.spike_and_reset_voltage()
-        spikes = FastSigmoidSpike.apply(self._v - self._v_thr)
-        self.reset_spiked_neurons(spikes)
 
-        return spikes
+        return self.spike_and_reset_voltage()
 
     def spike(self) -> torch.Tensor:
-        ...
+        return FastSigmoidSpike.apply(self._v - self._v_thr)
 
     def calculate_current(self, s_t: torch.Tensor) -> torch.Tensor:
-        # print(s_t.shape, self._w.shape)
-        # # print(self._decay.shape)
-        # c2 = self._decay * self._c
-        # p = s_t @ self._w
-        # print(c2.shape, p.shape)
-        # self._c = c2 + p
-
         self._c = self._decay * self._c + self._fc(s_t)
 
     def reset_layer(self):
